@@ -1,0 +1,75 @@
+services:
+  doctor-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: doctor_db
+      POSTGRES_USER: clinic
+      POSTGRES_PASSWORD: clinicdev
+    volumes:
+      - doctor-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clinic -d doctor_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  appointment-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: appointment_db
+      POSTGRES_USER: clinic
+      POSTGRES_PASSWORD: clinicdev
+    volumes:
+      - appointment-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clinic -d appointment_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  doctor-service:
+    build: ./doctor-service
+    environment:
+      PORT: 3001
+      PGHOST: doctor-db
+      PGPORT: 5432
+      PGDATABASE: doctor_db
+      PGUSER: clinic
+      PGPASSWORD: clinicdev
+    ports:
+      - "3001:3001"
+    depends_on:
+      doctor-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  appointment-service:
+    build: ./appointment-service
+    environment:
+      PORT: 3002
+      PGHOST: appointment-db
+      PGPORT: 5432
+      PGDATABASE: appointment_db
+      PGUSER: clinic
+      PGPASSWORD: clinicdev
+      DOCTOR_SERVICE_URL: http://doctor-service:3001
+    ports:
+      - "3002:3002"
+    depends_on:
+      appointment-db:
+        condition: service_healthy
+      doctor-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  doctor-db-data:
+  appointment-db-data:

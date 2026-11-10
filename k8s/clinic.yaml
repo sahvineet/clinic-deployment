@@ -1,0 +1,315 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: doctor-db-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doctor-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: doctor-db
+  template:
+    metadata:
+      labels:
+        app: doctor-db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: doctor_db
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: clinic-db-credentials
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clinic-db-credentials
+                  key: password
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d doctor_db"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d doctor_db"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: doctor-db-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: doctor-db
+spec:
+  selector:
+    app: doctor-db
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: appointment-db-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: appointment-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: appointment-db
+  template:
+    metadata:
+      labels:
+        app: appointment-db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: appointment_db
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: clinic-db-credentials
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clinic-db-credentials
+                  key: password
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d appointment_db"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d appointment_db"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: appointment-db-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: appointment-db
+spec:
+  selector:
+    app: appointment-db
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doctor-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: doctor-service
+  template:
+    metadata:
+      labels:
+        app: doctor-service
+    spec:
+      initContainers:
+        - name: wait-for-database
+          image: postgres:17-alpine
+          command:
+            - sh
+            - -c
+            - until pg_isready -h doctor-db -p 5432 -U "$PGUSER" -d doctor_db; do sleep 2; done
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: clinic-db-credentials
+                  key: username
+      containers:
+        - name: doctor-service
+          image: clinic-doctor-service:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3001
+          env:
+            - name: PORT
+              value: "3001"
+            - name: PGHOST
+              value: doctor-db
+            - name: PGDATABASE
+              value: doctor_db
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: clinic-db-credentials
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clinic-db-credentials
+                  key: password
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: doctor-service
+spec:
+  type: NodePort
+  selector:
+    app: doctor-service
+  ports:
+    - port: 3001
+      targetPort: 3001
+      nodePort: 30001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: appointment-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: appointment-service
+  template:
+    metadata:
+      labels:
+        app: appointment-service
+    spec:
+      initContainers:
+        - name: wait-for-database
+          image: postgres:17-alpine
+          command:
+            - sh
+            - -c
+            - until pg_isready -h appointment-db -p 5432 -U "$PGUSER" -d appointment_db; do sleep 2; done
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: clinic-db-credentials
+                  key: username
+      containers:
+        - name: appointment-service
+          image: clinic-appointment-service:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3002
+          env:
+            - name: PORT
+              value: "3002"
+            - name: PGHOST
+              value: appointment-db
+            - name: PGDATABASE
+              value: appointment_db
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: clinic-db-credentials
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: clinic-db-credentials
+                  key: password
+            - name: DOCTOR_SERVICE_URL
+              value: http://doctor-service:3001
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3002
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3002
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: appointment-service
+spec:
+  type: NodePort
+  selector:
+    app: appointment-service
+  ports:
+    - port: 3002
+      targetPort: 3002
+      nodePort: 30002

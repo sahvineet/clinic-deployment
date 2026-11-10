@@ -1,0 +1,78 @@
+{
+  "info": {
+    "_postman_id": "62ddaf8e-e6a1-4c46-9e2c-2f42304875fa",
+    "name": "Clinic Appointment Services",
+    "description": "Simple requests for the Doctor/Schedule and Appointment services. Run them in order, then manually update doctorId and appointmentId from the create responses. Set slotStartsAt to a future ISO timestamp.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "doctor_base_url", "value": "http://localhost:3001" },
+    { "key": "appointment_base_url", "value": "http://localhost:3002" },
+    { "key": "doctorId", "value": "1" },
+    { "key": "appointmentId", "value": "1" },
+    { "key": "slotStartsAt", "value": "2030-01-01T10:00:00.000Z" },
+    { "key": "patientEmail", "value": "pat@example.com" }
+  ],
+  "item": [
+    {
+      "name": "1. Create doctor",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Dr Lee\",\n  \"specialization\": \"Cardiology\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{doctor_base_url}}/doctors"
+      }
+    },
+    {
+      "name": "2. Publish appointment slot",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"startsAt\": \"{{slotStartsAt}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{doctor_base_url}}/doctors/{{doctorId}}/slots"
+      }
+    },
+    {
+      "name": "3. Check availability",
+      "request": {
+        "method": "GET",
+        "url": "{{appointment_base_url}}/availability?doctorId={{doctorId}}&from={{slotStartsAt}}&to={{slotStartsAt}}"
+      }
+    },
+    {
+      "name": "4. Book appointment",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"doctorId\": {{doctorId}},\n  \"patientName\": \"Pat Example\",\n  \"patientEmail\": \"{{patientEmail}}\",\n  \"startsAt\": \"{{slotStartsAt}}\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": "{{appointment_base_url}}/appointments"
+      }
+    },
+    {
+      "name": "5. Read appointment",
+      "request": {
+        "method": "GET",
+        "url": "{{appointment_base_url}}/appointments/{{appointmentId}}"
+      }
+    },
+    {
+      "name": "6. Cancel appointment",
+      "request": {
+        "method": "DELETE",
+        "url": "{{appointment_base_url}}/appointments/{{appointmentId}}"
+      }
+    }
+  ]
+}
